@@ -1,22 +1,23 @@
-﻿/* 
- * Copyright (C) 2013 Ryan Sammon.
- * 
- * This file is part of the Vinesauce ROM Corruptor.
- * 
- * The Vinesauce ROM Corruptor is free software: you can redistribute
- * it and/or modify it under the terms of the GNU General Public 
- * License as published by the Free Software Foundation, either 
- * version 3 of the License, or (at your option) any later version.
- * 
- * The Vinesauce ROM Corruptor is distributed in the hope that it
- * will be useful, but WITHOUT ANY WARRANTY; without even the implied
- * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
- * See the GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with the Vinesauce ROM Corruptor.  If not, see 
- * <http://www.gnu.org/licenses/>.
- */
+﻿/*
+* Copyright (C) 2013 Ryan Sammon.
+*
+* This file is part of the Vinesauce ROM Corruptor.
+*
+* The Vinesauce ROM Corruptor is free software: you can redistribute
+* it and/or modify it under the terms of the GNU General Public
+* License as published by the Free Software Foundation, either
+* version 3 of the License, or (at your option) any later version.
+*
+* The Vinesauce ROM Corruptor is distributed in the hope that it
+* will be useful, but WITHOUT ANY WARRANTY; without even the implied
+* warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+* See the GNU General Public License for more details.
+*
+* You should have received a copy of the GNU General Public License
+* along with the Vinesauce ROM Corruptor. If not, see
+* <http://www.gnu.org/licenses/>.
+*/
+
 
 using System;
 using System.Collections.Generic;
@@ -33,6 +34,7 @@ using System.Threading;
 using System.Text.RegularExpressions;
 using Microsoft.VisualBasic;
 using System.Net;
+using System.Security.Cryptography;
 
 namespace Vinesauce_ROM_Corruptor {
     public enum HotkeyActions {
@@ -71,13 +73,22 @@ namespace Vinesauce_ROM_Corruptor {
         static public HotkeyActions HotkeyAction = HotkeyActions.AddStart;
         static public bool HotkeyEnabled = false;
 
+        byte[] romHashToFind = null;
+
+        static void ShowErrorBox(string message) {
+            MessageBox.Show(message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
         public MainForm() {
             InitializeComponent();
 
             // Try to load the save location and emulator to run.
             try {
                 string text = File.ReadAllText("VinesauceROMCorruptor.txt");
-                Match m = Regex.Match(text, "(?<=textBox_SaveLocation\\.Text=).*?(?=\r)");
+                Match m = Regex.Match(text, "(?<=textBox_RomDirectory\\.Text=).*?(?=\r)");
+                if(m.Success) {
+                    textBox_RomDirectory.Text = m.Groups[0].Value;
+                }                 
+                m = Regex.Match(text, "(?<=textBox_SaveLocation\\.Text=).*?(?=\r)");
                 if(m.Success) {
                     textBox_SaveLocation.Text = m.Groups[0].Value;
                 }
@@ -97,28 +108,102 @@ namespace Vinesauce_ROM_Corruptor {
                 if(m.Success) {
                     HotkeyAction = (HotkeyActions)Enum.Parse(typeof(HotkeyActions), m.Groups[0].Value, false);
                 }
+                RepopulateFileList();
             } catch {
                 // Do nothing, stop exception.
             }
         }
 
+        class RomId {
+            static SHA256 sha = SHA256Managed.Create();
+            public string fullPath, readableHash, base64Hash;
+            byte[] hash;
+            public RomId(string fullPath) {
+                this.fullPath = fullPath;
+                byte[] ROM = ReadROM();                
+                this.hash = sha.ComputeHash(ROM);
+                readableHash = BitConverter.ToString(hash);
+                base64Hash = Convert.ToBase64String(hash);
+            }
+            string Filename() {
+                return Path.GetFileName(fullPath);
+            }
+
+            public ListViewItem GetListViewItem() {
+                ListViewItem item = new ListViewItem(new string[] { Filename(), readableHash });
+                item.Tag = this;
+
+                return item;
+            }
+
+            public byte[] ReadROM() {
+                try {
+                    return File.ReadAllBytes(fullPath);
+                } catch {
+                    ShowErrorBox("Error reading ROM.");
+                    return null;
+                }
+            }
+
+            public bool MatchesHash(byte[] otherHash) {
+                if(otherHash == null) {
+                    return false;
+                }
+                return otherHash.SequenceEqual(hash);
+            }
+        }
+
+        private void RepopulateFileList() {
+            string[] fileEntries = Directory.GetFiles(textBox_RomDirectory.Text);
+            
+            fileListView.Items.Clear();
+            fileListView.Focus();
+            foreach(string filepath in fileEntries){
+                if(Path.GetExtension(filepath) == ".nes" &&
+                    filepath != textBox_SaveLocation.Text) {
+                    RomId romid = new RomId(filepath);
+                    fileListView.Items.Add(romid.GetListViewItem());
+                }
+            }
+            SelectRomToFind();
+        }
+        private void SelectRomToFind() {
+            foreach(ListViewItem item in fileListView.Items) {
+                RomId romid = (RomId)item.Tag;
+                if(romid.MatchesHash(romHashToFind)){
+                    fileListView.Focus();
+                    item.Selected = true;
+                    if(checkBox_AutoEnd.Checked) {
+                        FindEndOfROM();
+                    }
+                }
+            }
+        }
+        private RomId GetSelectedRomId() {
+            if(fileListView.SelectedItems.Count > 0) {
+                return (RomId)fileListView.SelectedItems[0].Tag;
+            } else {
+                return null;
+            }
+        }
+        private byte[] GetSelectedROM() {
+            RomId romid = GetSelectedRomId();
+            if(romid != null) {
+                return romid.ReadROM();
+            } else {
+                return null;
+            }
+        }
+
         private void button_RomToCorruptBrowse_Click(object sender, EventArgs e) {
             button_Run.Focus();
-            OpenFileDialog fDialog = new OpenFileDialog();
-            fDialog.Title = "Select ROM to Corrupt";
-            fDialog.CheckFileExists = true;
-            fDialog.CheckPathExists = true;
-            fDialog.Filter = "All files (*.*)|*.*";
+            FolderBrowserDialog fDialog = new FolderBrowserDialog();
+            fDialog.Description = "Select ROM Directory";
             if(fDialog.ShowDialog() == DialogResult.OK) {
-                textBox_RomToCorrupt.Text = fDialog.FileName.ToString();
+                textBox_RomDirectory.Text = fDialog.SelectedPath;
             }
-            textBox_RomToCorrupt.SelectionStart = textBox_RomToCorrupt.Text.Length;
-            textBox_RomToCorrupt.ScrollToCaret();
 
-            // Set to end of new ROM if desired.
-            if(checkBox_AutoEnd.Checked) {
-                FindEndOfROM();
-            }
+            RepopulateFileList();
         }
 
         private void button_SaveLocationBrowse_Click(object sender, EventArgs e) {
@@ -137,6 +222,7 @@ namespace Vinesauce_ROM_Corruptor {
             }
             textBox_SaveLocation.SelectionStart = textBox_SaveLocation.Text.Length;
             textBox_SaveLocation.ScrollToCaret();
+            RepopulateFileList();
         }
 
         private void checkBox_RunEmulator_CheckedChanged(object sender, EventArgs e) {
@@ -192,26 +278,21 @@ namespace Vinesauce_ROM_Corruptor {
             // Check that we can write to the file.
             if(File.Exists(textBox_SaveLocation.Text) && !checkBox_Overwrite.Checked) {
                 if(!checkBox_Overwrite.Checked) {
-                    MessageBox.Show("File to save to exists and overwrite is not enabled.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    ShowErrorBox("File to save to exists and overwrite is not enabled.");
                     return;
                 }
             }
 
             // Read the ROM in.
-            byte[] ROM = null;
-            try {
-                ROM = File.ReadAllBytes(textBox_RomToCorrupt.Text);
-            } catch {
-                MessageBox.Show("Error reading ROM.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
+            byte[] ROM = GetSelectedROM();
+            if(ROM == null) { return; }
 
             // Read in all of the text boxes.
             long StartByte;
             try {
                 StartByte = Convert.ToInt64(textBox_StartByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid start byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid start byte.");
                 return;
             }
 
@@ -219,7 +300,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 EndByte = Convert.ToInt64(textBox_EndByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid end byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid end byte.");
                 return;
             }
 
@@ -227,11 +308,11 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 EveryNthByte = Convert.ToUInt32(textBox_EveryNBytes.Text);
             } catch {
-                MessageBox.Show("Invalid byte corruption interval.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid byte corruption interval.");
                 return;
             }
             if(EveryNthByte == 0) {
-                MessageBox.Show("Invalid byte corruption interval.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid byte corruption interval.");
                 return;
             }
 
@@ -239,7 +320,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 AddXtoByte = Convert.ToInt32(textBox_AddXToByte.Text);
             } catch {
-                MessageBox.Show("Invalid byte addition value.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid byte addition value.");
                 return;
             }
 
@@ -247,7 +328,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 ShiftRightXBytes = Convert.ToInt32(textBox_ShiftRightXBytes.Text);
             } catch {
-                MessageBox.Show("Invalid right shift value.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid right shift value.");
                 return;
             }
 
@@ -255,7 +336,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 ReplaceByteXwithYByteX = Convert.ToByte(textBox_ReplaceByteXwithYByteX.Text, 16);
             } catch {
-                MessageBox.Show("Invalid byte to match.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid byte to match.");
                 return;
             }
 
@@ -263,7 +344,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 ReplaceByteXwithYByteY = Convert.ToByte(textBox_ReplaceByteXwithYByteY.Text, 16);
             } catch {
-                MessageBox.Show("Invalid byte replacement.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid byte replacement.");
                 return;
             }
 
@@ -289,7 +370,7 @@ namespace Vinesauce_ROM_Corruptor {
 
                 // Make sure they have equal length.
                 if(TextToReplace.Length != ReplaceWith.Length) {
-                    MessageBox.Show("Number of text sections to replace does not match number of replacements.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    ShowErrorBox("Number of text sections to replace does not match number of replacements.");
                     return;
                 }
 
@@ -484,7 +565,7 @@ namespace Vinesauce_ROM_Corruptor {
 
                 // Make sure they have equal length.
                 if(ColorsToReplace.Length != ColorsReplaceWith.Length) {
-                    MessageBox.Show("Number of colors to replace does not match number of replacements.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    ShowErrorBox("Number of colors to replace does not match number of replacements.");
                     return;
                 }
 
@@ -496,7 +577,7 @@ namespace Vinesauce_ROM_Corruptor {
                         byte Converted = Convert.ToByte(ColorsToReplace[i], 16);
                         ColorsToReplaceBytes[i] = Converted;
                     } catch {
-                        MessageBox.Show("Invalid color to replace.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        ShowErrorBox("Invalid color to replace.");
                         return;
                     }
                 }
@@ -505,7 +586,7 @@ namespace Vinesauce_ROM_Corruptor {
                         byte Converted = Convert.ToByte(ColorsReplaceWith[i], 16);
                         ColorsReplaceWithBytes[i] = Converted;
                     } catch {
-                        MessageBox.Show("Invalid color replacement.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        ShowErrorBox("Invalid color replacement.");
                         return;
                     }
                 }
@@ -677,7 +758,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 File.WriteAllBytes(textBox_SaveLocation.Text, ROM);
             } catch {
-                MessageBox.Show("Error saving corrupted ROM.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Error saving corrupted ROM.");
                 return;
             }
 
@@ -695,9 +776,9 @@ namespace Vinesauce_ROM_Corruptor {
 
                     // Attempt to restart.
                     try {
-                        Emulator = Process.Start(textBox_EmulatorToRun.Text, "\"" + textBox_SaveLocation.Text + "\"");
+                        Emulator = Process.Start(textBox_EmulatorToRun.Text, textBox_SaveLocation.Text);
                     } catch {
-                        MessageBox.Show("Error starting emulator.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        ShowErrorBox("Error starting emulator.");
                         return;
                     }
 
@@ -710,9 +791,9 @@ namespace Vinesauce_ROM_Corruptor {
                 } catch {
                     // Its not, just try to start the emulator.
                     try {
-                        Emulator = Process.Start(textBox_EmulatorToRun.Text, "\"" + textBox_SaveLocation.Text + "\"");
+                        Emulator = Process.Start(textBox_EmulatorToRun.Text, textBox_SaveLocation.Text);
                     } catch {
-                        MessageBox.Show("Error starting emulator.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        ShowErrorBox("Error starting emulator.");
                         return;
                     }
                 }
@@ -774,11 +855,8 @@ namespace Vinesauce_ROM_Corruptor {
         }
 
         private void FindEndOfROM() {
-            byte[] ROM = null;
-            try {
-                ROM = File.ReadAllBytes(textBox_RomToCorrupt.Text);
-            } catch {
-                MessageBox.Show("Error reading ROM.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            byte[] ROM = GetSelectedROM();
+            if(ROM == null){
                 checkBox_AutoEnd.Checked = false;
                 return;
             }
@@ -787,7 +865,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 StartByte = Convert.ToInt64(textBox_StartByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid start byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid start byte.");
                 checkBox_AutoEnd.Checked = false;
                 return;
             }
@@ -821,7 +899,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 StartByte = Convert.ToInt64(textBox_StartByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid start byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid start byte.");
                 return;
             }
 
@@ -829,7 +907,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 EndByte = Convert.ToInt64(textBox_EndByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid end byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid end byte.");
                 return;
             }
 
@@ -837,7 +915,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 Increment = Convert.ToInt64(textBox_Increment.Text, 16);
             } catch {
-                MessageBox.Show("Invalid increment.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid increment.");
                 return;
             }
 
@@ -854,7 +932,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 StartByte = Convert.ToInt64(textBox_StartByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid start byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid start byte.");
                 return;
             }
 
@@ -862,7 +940,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 EndByte = Convert.ToInt64(textBox_EndByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid end byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid end byte.");
                 return;
             }
 
@@ -870,7 +948,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 Increment = Convert.ToInt64(textBox_Increment.Text, 16);
             } catch {
-                MessageBox.Show("Invalid increment.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid increment.");
                 return;
             }
 
@@ -887,7 +965,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 StartByte = Convert.ToInt64(textBox_StartByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid start byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid start byte.");
                 return;
             }
 
@@ -895,7 +973,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 EndByte = Convert.ToInt64(textBox_EndByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid end byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid end byte.");
                 return;
             }
 
@@ -903,7 +981,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 Increment = Convert.ToInt64(textBox_Increment.Text, 16);
             } catch {
-                MessageBox.Show("Invalid increment.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid increment.");
                 return;
             }
 
@@ -917,7 +995,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 StartByte = Convert.ToInt64(textBox_StartByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid start byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid start byte.");
                 return;
             }
 
@@ -925,7 +1003,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 EndByte = Convert.ToInt64(textBox_EndByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid end byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid end byte.");
                 return;
             }
 
@@ -933,7 +1011,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 Increment = Convert.ToInt64(textBox_Increment.Text, 16);
             } catch {
-                MessageBox.Show("Invalid increment.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid increment.");
                 return;
             }
 
@@ -950,7 +1028,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 StartByte = Convert.ToInt64(textBox_StartByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid start byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid start byte.");
                 return;
             }
 
@@ -958,7 +1036,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 EndByte = Convert.ToInt64(textBox_EndByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid end byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid end byte.");
                 return;
             }
 
@@ -966,7 +1044,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 Increment = Convert.ToInt64(textBox_Increment.Text, 16);
             } catch {
-                MessageBox.Show("Invalid increment.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid increment.");
                 return;
             }
 
@@ -982,7 +1060,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 StartByte = Convert.ToInt64(textBox_StartByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid start byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid start byte.");
                 return;
             }
 
@@ -990,7 +1068,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 EndByte = Convert.ToInt64(textBox_EndByte.Text, 16);
             } catch {
-                MessageBox.Show("Invalid end byte.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid end byte.");
                 return;
             }
 
@@ -998,7 +1076,7 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 Increment = Convert.ToInt64(textBox_Increment.Text, 16);
             } catch {
-                MessageBox.Show("Invalid increment.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowErrorBox("Invalid increment.");
                 return;
             }
 
@@ -1071,7 +1149,7 @@ namespace Vinesauce_ROM_Corruptor {
                 // Get the name of the paste from user.
                 string name = Interaction.InputBox("Please enter a brief description of these corruption settings below.", "Save to TinyURL", "");
                 if(name == "") {
-                    MessageBox.Show("No description entered, save to TinyURL aborted.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    ShowErrorBox("No description entered, save to TinyURL aborted.");
                     return;
                 }
 
@@ -1085,7 +1163,7 @@ namespace Vinesauce_ROM_Corruptor {
                     ub.Query = "url=" + SettingsToString();
                     response = wc.DownloadString(ub.Uri);
                 } catch {
-                    MessageBox.Show("Error saving to TinyURL. Please retry.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    ShowErrorBox("Error saving to TinyURL. Please retry.");
                     return;
                 }
 
@@ -1109,7 +1187,7 @@ namespace Vinesauce_ROM_Corruptor {
                     // Close the file.
                     sw.Close();
                 } catch {
-                    MessageBox.Show("Error adding to list of TinyURLs.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    ShowErrorBox("Error adding to list of TinyURLs.");
                     return;
                 }
             } else {
@@ -1133,7 +1211,7 @@ namespace Vinesauce_ROM_Corruptor {
                         // Close the file.
                         sw.Close();
                     } catch {
-                        MessageBox.Show("Error saving corruption settings.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        ShowErrorBox("Error saving corruption settings.");
                         return;
                     }
                 }
@@ -1146,7 +1224,7 @@ namespace Vinesauce_ROM_Corruptor {
                 // Get the TinyURL from the user.
                 string url = Interaction.InputBox("Please enter the TinyURL to load below.", "Load from TinyURL", "");
                 if(url == "") {
-                    MessageBox.Show("No TinyURL entered, load from TinyURL aborted.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    ShowErrorBox("No TinyURL entered, load from TinyURL aborted.");
                     return;
                 }
 
@@ -1167,7 +1245,7 @@ namespace Vinesauce_ROM_Corruptor {
                     // Load the settings.
                     StringToSettings(text);
                 } catch {
-                    MessageBox.Show("Error loading from TinyURL. Please ensure the TinyURL is correct and retry.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    ShowErrorBox("Error loading from TinyURL. Please ensure the TinyURL is correct and retry.");
                     return;
                 }
             } else {
@@ -1182,11 +1260,12 @@ namespace Vinesauce_ROM_Corruptor {
                         // Load the settings from the file.
                         StringToSettings(File.ReadAllText(fDialog.FileName));
                     } catch {
-                        MessageBox.Show("Error loading corruption settings.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        ShowErrorBox("Error loading corruption settings.");
                         return;
                     }
                 }
             }
+            SelectRomToFind();
         }
 
         private void button_ShiftRightXBytesHelp_Click(object sender, EventArgs e) {
@@ -1203,10 +1282,11 @@ namespace Vinesauce_ROM_Corruptor {
 
         private string SettingsToString() {
             StringBuilder sb = new StringBuilder();
-
-            // ROM to corrupt.
-            sb.AppendLine("textBox_RomToCorrupt.Text=" + textBox_RomToCorrupt.Text);
-
+            
+            RomId romid = GetSelectedRomId();
+            // hash of ROM to corrupt.
+            sb.AppendLine("romHashToFind=" + romid.base64Hash);
+            
             // General settings.
             sb.AppendLine("checkBox_EnableNESCPUJamProtection.Checked=" + checkBox_EnableNESCPUJamProtection.Checked.ToString());
 
@@ -1240,12 +1320,11 @@ namespace Vinesauce_ROM_Corruptor {
 
             return sb.ToString();
         }
-
         private void StringToSettings(string text) {
-            // ROM to corrupt.
-            Match m = Regex.Match(text, "(?<=textBox_RomToCorrupt\\.Text=).*?(?=\r)");
+
+            Match m = Regex.Match(text, "(?<=romHashToFind=).*?(?=\r)");
             if(m.Success) {
-                textBox_RomToCorrupt.Text = m.Groups[0].Value;
+                romHashToFind = Convert.FromBase64String(m.Groups[0].Value);
             }
 
             // Enable checkboxes.
@@ -1453,6 +1532,7 @@ namespace Vinesauce_ROM_Corruptor {
                 StreamWriter sw = new StreamWriter("VinesauceROMCorruptor.txt", false);
 
                 // Write the save location and emulator to run.
+                sw.WriteLine("textBox_RomDirectory.Text=" + textBox_RomDirectory.Text);
                 sw.WriteLine("textBox_SaveLocation.Text=" + textBox_SaveLocation.Text);
                 sw.WriteLine("textBox_EmulatorToRun.Text=" + textBox_EmulatorToRun.Text);
                 sw.WriteLine("HotkeyEnabled=" + checkBox_HotkeyEnable.Checked);
@@ -1465,5 +1545,6 @@ namespace Vinesauce_ROM_Corruptor {
                 // Do nothing, stop exception.
             }
         }
+
     }
 }
