@@ -18,7 +18,6 @@
 * <http://www.gnu.org/licenses/>.
 */
 
-
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -34,7 +33,6 @@ using System.Threading;
 using System.Text.RegularExpressions;
 using Microsoft.VisualBasic;
 using System.Net;
-using System.Security.Cryptography;
 
 namespace Vinesauce_ROM_Corruptor {
     public enum HotkeyActions {
@@ -75,7 +73,7 @@ namespace Vinesauce_ROM_Corruptor {
 
         byte[] romHashToFind = null;
 
-        static void ShowErrorBox(string message) {
+        static public void ShowErrorBox(string message) {
             MessageBox.Show(message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         public MainForm() {
@@ -111,45 +109,6 @@ namespace Vinesauce_ROM_Corruptor {
                 RepopulateFileList();
             } catch {
                 // Do nothing, stop exception.
-            }
-        }
-
-        class RomId {
-            static SHA256 sha = SHA256Managed.Create();
-            public string fullPath, readableHash, base64Hash;
-            byte[] hash;
-            public RomId(string fullPath) {
-                this.fullPath = fullPath;
-                byte[] ROM = ReadROM();                
-                this.hash = sha.ComputeHash(ROM);
-                readableHash = BitConverter.ToString(hash);
-                base64Hash = Convert.ToBase64String(hash);
-            }
-            string Filename() {
-                return Path.GetFileName(fullPath);
-            }
-
-            public ListViewItem GetListViewItem() {
-                ListViewItem item = new ListViewItem(new string[] { Filename(), readableHash });
-                item.Tag = this;
-
-                return item;
-            }
-
-            public byte[] ReadROM() {
-                try {
-                    return File.ReadAllBytes(fullPath);
-                } catch {
-                    ShowErrorBox("Error reading ROM.");
-                    return null;
-                }
-            }
-
-            public bool MatchesHash(byte[] otherHash) {
-                if(otherHash == null) {
-                    return false;
-                }
-                return otherHash.SequenceEqual(hash);
             }
         }
 
