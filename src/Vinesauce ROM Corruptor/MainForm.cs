@@ -114,7 +114,12 @@ namespace Vinesauce_ROM_Corruptor {
         }
 
         private void RepopulateFileList() {
-            string[] fileEntries = Directory.GetFiles(textBox_RomDirectory.Text);
+            string[] fileEntries;
+            try {
+                fileEntries = Directory.GetFiles(textBox_RomDirectory.Text);
+            } catch {
+                return;
+            } 
             
             fileListView.Items.Clear();
             fileListView.Focus();
