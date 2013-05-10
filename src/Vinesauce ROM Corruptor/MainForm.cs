@@ -72,6 +72,7 @@ namespace Vinesauce_ROM_Corruptor {
         static public bool HotkeyEnabled = false;
 
         byte[] romHashToFind = null;
+        string romFilenameToFind = null;
 
         static public void ShowErrorBox(string message) {
             MessageBox.Show(message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -118,8 +119,7 @@ namespace Vinesauce_ROM_Corruptor {
             fileListView.Items.Clear();
             fileListView.Focus();
             foreach(string filepath in fileEntries){
-                if(Path.GetExtension(filepath) == ".nes" &&
-                    filepath != textBox_SaveLocation.Text) {
+                if(filepath != textBox_SaveLocation.Text) {
                     RomId romid = new RomId(filepath);
                     fileListView.Items.Add(romid.GetListViewItem());
                 }
@@ -129,12 +129,14 @@ namespace Vinesauce_ROM_Corruptor {
         private void SelectRomToFind() {
             foreach(ListViewItem item in fileListView.Items) {
                 RomId romid = (RomId)item.Tag;
-                if(romid.MatchesHash(romHashToFind)){
+                if(romid.MatchesHash(romHashToFind) || (romFilenameToFind != null && romid.MatchesFilename(romFilenameToFind))){
                     fileListView.Focus();
                     item.Selected = true;
                     if(checkBox_AutoEnd.Checked) {
                         FindEndOfROM();
                     }
+                    romHashToFind = null;
+                    romFilenameToFind = null;
                 }
             }
         }
@@ -1284,6 +1286,12 @@ namespace Vinesauce_ROM_Corruptor {
             Match m = Regex.Match(text, "(?<=romHashToFind=).*?(?=\r)");
             if(m.Success) {
                 romHashToFind = Convert.FromBase64String(m.Groups[0].Value);
+            }
+
+            // Filename of ROM to corrupt for backwards compatibility
+            m = Regex.Match(text, "(?<=textBox_RomToCorrupt\\.Text=).*?(?=\r)");
+            if(m.Success) {
+                romFilenameToFind = m.Groups[0].Value;
             }
 
             // Enable checkboxes.

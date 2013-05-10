@@ -18,12 +18,12 @@ namespace Vinesauce_ROM_Corruptor {
             readableHash = BitConverter.ToString(hash);
             base64Hash = Convert.ToBase64String(hash);
         }
-        string Filename() {
+        string FileName() {
             return Path.GetFileName(fullPath);
         }
 
         public ListViewItem GetListViewItem() {
-            ListViewItem item = new ListViewItem(new string[] { Filename(), readableHash });
+            ListViewItem item = new ListViewItem(new string[] { FileName(), readableHash });
             item.Tag = this;
 
             return item;
@@ -43,6 +43,13 @@ namespace Vinesauce_ROM_Corruptor {
                 return false;
             }
             return otherHash.SequenceEqual(hash);
+        }
+
+        public bool MatchesFilename(string otherFullpath) {
+            if(otherFullpath == null) {
+                return false;
+            }
+            return Path.GetFileName(otherFullpath) == FileName();
         }
     }
 }
