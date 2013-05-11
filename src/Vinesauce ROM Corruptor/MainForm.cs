@@ -142,6 +142,7 @@ namespace Vinesauce_ROM_Corruptor {
                     }
                     romHashToFind = null;
                     romFilenameToFind = null;
+                    break;
                 }
             }
         }
