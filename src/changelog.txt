@@ -1,0 +1,10 @@
+Version 1.010
+
+- Fixed spaces in file paths preventing emulators from finding the file
+
+- Replaced single file selection with a list of files and their hashes. Saving and loading corruptions will use this hash to look up files instead of their filenames. Old saves will still work.
+
+Version 1.000
+
+- Initial release on Github
+
