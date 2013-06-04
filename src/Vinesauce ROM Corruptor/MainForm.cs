@@ -365,7 +365,7 @@ namespace Vinesauce_ROM_Corruptor {
 
                     // Attempt to restart.
                     try {
-                        Emulator = Process.Start(textBox_EmulatorToRun.Text, textBox_SaveLocation.Text);
+                        Emulator = Process.Start( "\"" + textBox_EmulatorToRun.Text + "\"", "\"" + textBox_SaveLocation.Text + "\"");
                     } catch {
                         ShowErrorBox("Error starting emulator.");
                         return;
@@ -380,7 +380,7 @@ namespace Vinesauce_ROM_Corruptor {
                 } catch {
                     // Its not, just try to start the emulator.
                     try {
-                        Emulator = Process.Start(textBox_EmulatorToRun.Text, textBox_SaveLocation.Text);
+                        Emulator = Process.Start( "\"" + textBox_EmulatorToRun.Text + "\"", "\"" + textBox_SaveLocation.Text + "\"");
                     } catch {
                         ShowErrorBox("Error starting emulator.");
                         return;
