@@ -1,3 +1,7 @@
+Version 1.011
+
+- Made errors on unreadable files not cause null exceptions
+
 Version 1.010
 
 - Fixed spaces in file paths preventing emulators from finding the file
