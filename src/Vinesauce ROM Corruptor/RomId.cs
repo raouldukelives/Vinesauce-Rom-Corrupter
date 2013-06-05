@@ -14,9 +14,11 @@ namespace Vinesauce_ROM_Corruptor {
         public RomId(string fullPath) {
             this.fullPath = fullPath;
             byte[] ROM = ReadROM();
-            this.hash = sha.ComputeHash(ROM);
-            readableHash = BitConverter.ToString(hash);
-            base64Hash = Convert.ToBase64String(hash);
+            if(ROM != null) {
+                this.hash = sha.ComputeHash(ROM);
+                readableHash = BitConverter.ToString(hash);
+                base64Hash = Convert.ToBase64String(hash);
+            }
         }
         string FileName() {
             return Path.GetFileName(fullPath);
@@ -33,7 +35,8 @@ namespace Vinesauce_ROM_Corruptor {
             try {
                 return File.ReadAllBytes(fullPath);
             } catch {
-                MainForm.ShowErrorBox("Error reading ROM.");
+                //this message might get annoying if there are a lot of files that fail to read
+                MainForm.ShowErrorBox("Error reading file " + fullPath);
                 return null;
             }
         }

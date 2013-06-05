@@ -121,7 +121,9 @@ namespace Vinesauce_ROM_Corruptor {
             foreach(string filepath in fileEntries){
                 if(filepath != textBox_SaveLocation.Text) {
                     RomId romid = new RomId(filepath);
-                    fileListView.Items.Add(romid.GetListViewItem());
+                    if(romid.base64Hash != null) {
+                        fileListView.Items.Add(romid.GetListViewItem());
+                    }
                 }
             }
             SelectRomToFind();
